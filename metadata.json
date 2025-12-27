@@ -1,0 +1,7 @@
+{
+  "name": "MECDA Class Management System",
+  "description": "A comprehensive web-based management system for tuition classes, handling teachers, students, attendance, and payments with responsive design.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
