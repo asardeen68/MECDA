@@ -29,6 +29,8 @@ interface AppContextType {
   
   addStudentPayment: (p: Omit<StudentPayment, 'id'>) => Promise<void>;
   addTeacherPayment: (p: Omit<TeacherPayment, 'id'>) => Promise<void>;
+  updateTeacherPayment: (p: TeacherPayment) => Promise<void>;
+  deleteTeacherPayment: (id: string) => Promise<void>;
   
   updateAcademyInfo: (info: AcademyInfo) => Promise<void>;
 }
@@ -154,6 +156,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await db.teacherPayments.add(newPayment);
     setTeacherPayments(prev => [...prev, newPayment]);
   };
+
+  const updateTeacherPayment = async (p: TeacherPayment) => {
+    await db.teacherPayments.put(p);
+    setTeacherPayments(prev => prev.map(x => x.id === p.id ? p : x));
+  };
+
+  const deleteTeacherPayment = async (id: string) => {
+    await db.teacherPayments.delete(id);
+    setTeacherPayments(prev => prev.filter(x => x.id !== id));
+  };
   
   const updateAcademyInfo = async (info: AcademyInfo) => {
     await db.academyInfo.put({ ...info, id: 'main' });
@@ -166,7 +178,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addTeacher, updateTeacher, deleteTeacher,
       addStudent, updateStudent, deleteStudent,
       addSchedule, updateSchedule, deleteSchedule,
-      markAttendance, addStudentPayment, addTeacherPayment, updateAcademyInfo
+      markAttendance, addStudentPayment, addTeacherPayment, updateTeacherPayment, deleteTeacherPayment, updateAcademyInfo
     }}>
       {children}
     </AppContext.Provider>
