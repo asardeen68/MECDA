@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Teacher, Student, ClassSchedule, Attendance, StudentPayment, TeacherPayment, AcademyInfo } from './types';
+import { Teacher, Student, ClassSchedule, Attendance, StudentPayment, TeacherPayment, AcademyInfo, PaymentStatus } from './types';
 import { db } from './db';
 
 interface AppContextType {
@@ -28,6 +28,9 @@ interface AppContextType {
   markAttendance: (records: Omit<Attendance, 'id'>[]) => Promise<void>;
   
   addStudentPayment: (p: Omit<StudentPayment, 'id'>) => Promise<void>;
+  updateStudentPayment: (p: StudentPayment) => Promise<void>;
+  deleteStudentPayment: (id: string) => Promise<void>;
+  
   addTeacherPayment: (p: Omit<TeacherPayment, 'id'>) => Promise<void>;
   updateTeacherPayment: (p: TeacherPayment) => Promise<void>;
   deleteTeacherPayment: (id: string) => Promise<void>;
@@ -55,7 +58,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [academyInfo, setAcademyInfo] = useState<AcademyInfo>(DEFAULT_ACADEMY);
   const [loading, setLoading] = useState(true);
 
-  // Load data from IndexedDB on mount
   useEffect(() => {
     const initData = async () => {
       try {
@@ -150,6 +152,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setStudentPayments(prev => [...prev, newPayment]);
   };
 
+  const updateStudentPayment = async (p: StudentPayment) => {
+    await db.studentPayments.put(p);
+    setStudentPayments(prev => prev.map(x => x.id === p.id ? p : x));
+  };
+
+  const deleteStudentPayment = async (id: string) => {
+    await db.studentPayments.delete(id);
+    setStudentPayments(prev => prev.filter(x => x.id !== id));
+  };
+
   const addTeacherPayment = async (p: Omit<TeacherPayment, 'id'>) => {
     const id = 'TPY-' + Date.now().toString().slice(-6);
     const newPayment = { ...p, id };
@@ -178,7 +190,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       addTeacher, updateTeacher, deleteTeacher,
       addStudent, updateStudent, deleteStudent,
       addSchedule, updateSchedule, deleteSchedule,
-      markAttendance, addStudentPayment, addTeacherPayment, updateTeacherPayment, deleteTeacherPayment, updateAcademyInfo
+      markAttendance, 
+      addStudentPayment, updateStudentPayment, deleteStudentPayment,
+      addTeacherPayment, updateTeacherPayment, deleteTeacherPayment, 
+      updateAcademyInfo
     }}>
       {children}
     </AppContext.Provider>

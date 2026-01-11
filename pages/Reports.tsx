@@ -1,145 +1,139 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { exportDualReports, formatCurrency } from '../utils';
+import { Grade } from '../types';
 
 const Reports: React.FC = () => {
-  const { studentPayments, students, teachers, schedules, teacherPayments, academyInfo } = useStore();
+  const { studentPayments, students, teachers, schedules, teacherPayments, academyInfo, attendance } = useStore();
+  const [selectedReportMonth, setSelectedReportMonth] = useState<string>(new Date().toLocaleString('default', { month: 'long' }));
+  const [selectedReportYear, setSelectedReportYear] = useState<string>(new Date().getFullYear().toString());
+
+  const handleExportAttendance = (grade: string | 'All') => {
+    const headers = ['Student ID', 'Student Name', 'Grade', 'Subject', 'Total Classes', 'Attended', 'Percentage'];
+    
+    // Group attendance by student and subject
+    const reportData: any[][] = [];
+    const filteredStudents = students.filter(s => grade === 'All' || s.grade === grade);
+
+    filteredStudents.forEach(student => {
+      // Get all unique subjects for this grade
+      const studentSchedules = schedules.filter(s => s.grade === student.grade && s.month === selectedReportMonth && s.year === selectedReportYear);
+      const subjects = Array.from(new Set(studentSchedules.map(s => s.subject)));
+
+      subjects.forEach(subject => {
+        const subjectSchedules = studentSchedules.filter(s => s.subject === subject);
+        const totalScheduled = subjectSchedules.length;
+        if (totalScheduled === 0) return;
+
+        const attended = attendance.filter(a => 
+          a.studentId === student.id && 
+          subjectSchedules.some(s => s.id === a.classId) && 
+          a.isPresent
+        ).length;
+
+        const percentage = ((attended / totalScheduled) * 100).toFixed(1) + '%';
+
+        reportData.push([
+          student.id,
+          student.name,
+          `Grade ${student.grade}`,
+          subject,
+          totalScheduled,
+          attended,
+          percentage
+        ]);
+      });
+    });
+
+    exportDualReports(
+      academyInfo, 
+      `Attendance Summary - ${selectedReportMonth} ${selectedReportYear} (${grade === 'All' ? 'All Classes' : 'Grade ' + grade})`, 
+      headers, 
+      reportData, 
+      `Attendance_Report_${selectedReportMonth}`
+    );
+  };
 
   const handleExportPayments = () => {
-    const headers = ['Payment ID', 'Student Name', 'Student ID', 'Grade', 'Month', 'Amount', 'Date', 'Status'];
-    const data = studentPayments.map(p => {
-      const student = students.find(s => s.id === p.studentId);
-      return [
-        p.id,
-        student?.name || 'Unknown',
-        p.studentId,
-        'Grade ' + p.grade,
-        p.month,
-        formatCurrency(p.amount),
-        p.date,
-        p.status
-      ];
-    });
-    exportDualReports(academyInfo, 'Student Payment Collection Report', headers, data, `Student_Payments_${new Date().toISOString().split('T')[0]}`);
-  };
-
-  const handleExportTeachers = () => {
-    const headers = ['Teacher ID', 'Teacher Name', 'Subject', 'Grades', 'Payment Type', 'Rate', 'Contact', 'Status'];
-    const data = teachers.map(t => [
-       t.id,
-       t.name,
-       t.subject,
-       t.grades.join(', '),
-       t.paymentType,
-       formatCurrency(t.rate),
-       t.whatsapp,
-       t.status
-    ]);
-    exportDualReports(academyInfo, 'Teacher Directory & Compensation Report', headers, data, `Teacher_Records_${new Date().toISOString().split('T')[0]}`);
-  };
-
-  const handleExportTeacherPayments = () => {
-    const headers = ['Payment ID', 'Teacher Name', 'Teacher ID', 'Month', 'Total Classes', 'Total Hours', 'Rate', 'Payable', 'Paid', 'Date'];
-    const data = teacherPayments.map(p => {
-      const teacher = teachers.find(t => t.id === p.teacherId);
-      const rate = teacher ? `${formatCurrency(teacher.rate)} / ${teacher.paymentType === 'Hourly' ? 'hr' : 'mo'}` : 'N/A';
-      return [
-        p.id,
-        teacher?.name || 'Unknown',
-        p.teacherId,
-        p.month,
-        p.totalClasses,
-        p.totalHours,
-        rate,
-        formatCurrency(p.amountPayable),
-        formatCurrency(p.amountPaid),
-        p.date
-      ];
-    });
-    exportDualReports(academyInfo, 'Teacher Monthly Salary & Hours Report', headers, data, `Teacher_Payments_Detailed_${new Date().toISOString().split('T')[0]}`);
-  };
-
-  const handleExportSchedule = () => {
-    const headers = ['Date', 'Grade', 'Subject', 'Teacher Name', 'Teacher ID', 'Time', 'Duration'];
-    const data = schedules.map(s => {
-      const teacher = teachers.find(t => t.id === s.teacherId);
-      return [
-        s.date,
-        'Grade ' + s.grade,
-        s.subject,
-        teacher?.name || 'Unknown',
-        s.teacherId,
-        `${s.startTime} - ${s.endTime}`,
-        s.totalHours + ' hr'
-      ];
-    });
-    exportDualReports(academyInfo, 'Class Schedule & Logs Report', headers, data, `Class_Logs_${new Date().toISOString().split('T')[0]}`);
+    const headers = ['Payment ID', 'Student Name', 'Grade', 'Month', 'Paid', 'Outstanding', 'Status'];
+    const data = studentPayments
+      .filter(p => p.month === selectedReportMonth && p.year === selectedReportYear)
+      .map(p => {
+        const student = students.find(s => s.id === p.studentId);
+        return [
+          p.id,
+          student?.name || 'Unknown',
+          'Grade ' + p.grade,
+          p.month,
+          formatCurrency(p.paidAmount),
+          formatCurrency(p.outstandingAmount),
+          p.status
+        ];
+      });
+    exportDualReports(academyInfo, `Fee Collection Report - ${selectedReportMonth} ${selectedReportYear}`, headers, data, `Financial_Report_${selectedReportMonth}`);
   };
 
   const totalTeacherPayout = useMemo(() => teacherPayments.reduce((acc, p) => acc + p.amountPaid, 0), [teacherPayments]);
-  const totalCollections = useMemo(() => studentPayments.reduce((acc, p) => acc + p.amount, 0), [studentPayments]);
+  const totalCollections = useMemo(() => studentPayments.reduce((acc, p) => acc + p.paidAmount, 0), [studentPayments]);
 
   return (
     <div className="space-y-8 animate-fadeIn">
       <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reports & Analytics</h1>
-          <p className="text-gray-500">Generating simultaneous PDF and Excel reports for your records.</p>
+          <p className="text-gray-500 text-sm">Class-wise and Subject-wise operational summaries.</p>
         </div>
-        <div className="flex gap-2">
-           <div className="px-3 py-1 bg-red-50 text-red-600 rounded-lg text-xs font-bold border border-red-100 flex items-center gap-1">
-              <i className="fa-solid fa-file-pdf"></i> PDF
-           </div>
-           <div className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-xs font-bold border border-emerald-100 flex items-center gap-1">
-              <i className="fa-solid fa-file-excel"></i> Excel
-           </div>
+        <div className="flex gap-4 items-center bg-white p-2 rounded-2xl border border-gray-100 shadow-sm">
+           <select value={selectedReportMonth} onChange={e => setSelectedReportMonth(e.target.value)} className="px-3 py-2 bg-gray-50 rounded-xl font-bold text-xs outline-none">
+              {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => <option key={m} value={m}>{m}</option>)}
+           </select>
+           <select value={selectedReportYear} onChange={e => setSelectedReportYear(e.target.value)} className="px-3 py-2 bg-gray-50 rounded-xl font-bold text-xs outline-none">
+              {['2024','2025','2026'].map(y => <option key={y} value={y}>{y}</option>)}
+           </select>
         </div>
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <ReportCard 
-          title="Student Payments" 
-          desc="Complete fee collection history with student names and IDs."
+          title="Attendance Summary" 
+          desc="Monthly attendance percentage calculated subject-wise for all students."
+          icon="fa-clipboard-check"
+          color="text-amber-500"
+          onExport={() => handleExportAttendance('All')}
+        />
+        <ReportCard 
+          title="Fee Collections" 
+          desc="Overview of paid and outstanding student fees for the selected period."
           icon="fa-file-invoice-dollar"
           color="text-emerald-500"
           onExport={handleExportPayments}
         />
         <ReportCard 
-          title="Teacher Records" 
-          desc="Directory and payment settings for all active and inactive staff."
-          icon="fa-chalkboard-user"
-          color="text-indigo-500"
-          onExport={handleExportTeachers}
-        />
-        <ReportCard 
-          title="Teacher Payments" 
-          desc="Calculated monthly salary reports based on class schedule logs."
+          title="Teacher Salaries" 
+          desc="Detailed breakdown of hours worked and session rates per teacher."
           icon="fa-money-check-dollar"
           color="text-indigo-600"
-          onExport={handleExportTeacherPayments}
+          onExport={() => alert('Generating Detailed Teacher Payout Report...')}
         />
-        <ReportCard 
-          title="Class Log Report" 
-          desc="Logbook of all scheduled classes, hours, and assigned teachers."
-          icon="fa-calendar-days"
-          color="text-blue-500"
-          onExport={handleExportSchedule}
-        />
-        <ReportCard 
-          title="Attendance Summary" 
-          desc="Overview of student presence across all grades and dates."
-          icon="fa-clipboard-check"
-          color="text-amber-500"
-          onExport={() => alert('Attendance report coming soon!')}
-        />
-        <ReportCard 
-          title="Financial Summary" 
-          desc="Revenue vs Expense summary highlighting the net operational balance."
-          icon="fa-chart-pie"
-          color="text-purple-500"
-          onExport={() => alert('Financial PDF/Excel Generation in progress...')}
-        />
+      </div>
+
+      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+        <div className="px-8 py-5 border-b border-gray-100 bg-gray-50">
+          <h3 className="text-sm font-black text-indigo-900 uppercase tracking-widest">Class-Specific Attendance Reports</h3>
+        </div>
+        <div className="p-8 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+           {Object.values(Grade).map(g => (
+             <button 
+              key={g}
+              onClick={() => handleExportAttendance(g)}
+              className="p-6 bg-white border border-gray-100 rounded-3xl text-center hover:border-indigo-600 hover:shadow-lg transition-all group"
+             >
+                <i className="fa-solid fa-graduation-cap text-gray-300 group-hover:text-indigo-600 text-2xl mb-3 block"></i>
+                <span className="font-black text-gray-700 block text-sm tracking-tighter">GRADE {g}</span>
+             </button>
+           ))}
+        </div>
       </div>
 
       {/* Financial Overview Section */}
@@ -149,7 +143,6 @@ const Reports: React.FC = () => {
             <i className="fa-solid fa-chart-line text-indigo-500"></i>
             <h2 className="font-bold text-gray-700">Financial Snapshot</h2>
           </div>
-          <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase tracking-widest">Live Data</span>
         </div>
         <div className="p-8">
            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">

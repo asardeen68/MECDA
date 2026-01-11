@@ -20,7 +20,8 @@ export enum Status {
 
 export enum PaymentStatus {
   PAID = 'Paid',
-  PENDING = 'Pending'
+  PARTIAL = 'Partially Paid',
+  UNPAID = 'Unpaid'
 }
 
 export interface AcademyInfo {
@@ -62,6 +63,7 @@ export interface ClassSchedule {
   startTime: string;
   endTime: string;
   totalHours: number;
+  rateOverride?: number; // Added for flexible payment logic
   month: string;
   year: string;
 }
@@ -69,7 +71,7 @@ export interface ClassSchedule {
 export interface Attendance {
   id: string;
   studentId: string;
-  classId: string;
+  classId: string; // References ClassSchedule.id
   date: string;
   isPresent: boolean;
 }
@@ -79,8 +81,11 @@ export interface StudentPayment {
   studentId: string;
   grade: Grade;
   month: string;
+  year: string;
   date: string;
-  amount: number;
+  totalFee: number;
+  paidAmount: number;
+  outstandingAmount: number;
   status: PaymentStatus;
   remarks: string;
 }

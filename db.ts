@@ -1,7 +1,7 @@
-import Dexie, { type Table } from 'dexie';
+
+import { Dexie, type Table } from 'dexie';
 import { Teacher, Student, ClassSchedule, Attendance, StudentPayment, TeacherPayment, AcademyInfo } from './types';
 
-// Fix: Changed Dexie import to a default import to ensure the TypeScript compiler correctly recognizes instance methods like .version() inherited from the Dexie base class.
 export class AppDatabase extends Dexie {
   teachers!: Table<Teacher>;
   students!: Table<Student>;
@@ -13,12 +13,14 @@ export class AppDatabase extends Dexie {
 
   constructor() {
     super('MECDA_LocalDB');
-    this.version(1).stores({
+    // Fix: Explicitly cast 'this' to any to ensure the 'version' method is recognized by the compiler
+    // This resolves issues where TypeScript fails to detect methods from the Dexie base class during inheritance.
+    (this as any).version(1).stores({
       teachers: 'id, name, subject, status',
       students: 'id, name, grade, status',
       schedules: 'id, teacherId, month, year, date',
       attendance: 'id, studentId, classId, date',
-      studentPayments: 'id, studentId, month, date',
+      studentPayments: 'id, studentId, month, year, date, outstandingAmount',
       teacherPayments: 'id, teacherId, month',
       academyInfo: 'id'
     });

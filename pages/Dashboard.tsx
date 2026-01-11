@@ -10,7 +10,8 @@ const Dashboard: React.FC = () => {
   const stats = [
     { label: 'Active Students', value: students.filter(s => s.status === 'Active').length, icon: 'fa-user-graduate', color: 'bg-blue-500' },
     { label: 'Teachers', value: teachers.length, icon: 'fa-chalkboard-user', color: 'bg-indigo-500' },
-    { label: 'Total Revenue', value: formatCurrency(studentPayments.reduce((acc, p) => acc + p.amount, 0)), icon: 'fa-sack-dollar', color: 'bg-emerald-500' },
+    // Fixed: Corrected property name to paidAmount
+    { label: 'Total Revenue', value: formatCurrency(studentPayments.reduce((acc, p) => acc + p.paidAmount, 0)), icon: 'fa-sack-dollar', color: 'bg-emerald-500' },
     { label: 'Classes this Month', value: schedules.length, icon: 'fa-calendar-check', color: 'bg-amber-500' },
   ];
 
@@ -90,7 +91,8 @@ const Dashboard: React.FC = () => {
                     <p className="text-xs text-gray-500">{p.month}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-bold text-emerald-600">+{formatCurrency(p.amount)}</p>
+                    {/* Fixed: Corrected property name to paidAmount */}
+                    <p className="text-sm font-bold text-emerald-600">+{formatCurrency(p.paidAmount)}</p>
                     <p className="text-[10px] text-gray-400 uppercase">{p.date}</p>
                   </div>
                 </div>

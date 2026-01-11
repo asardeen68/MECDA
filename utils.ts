@@ -24,13 +24,14 @@ export const formatCurrency = (amount: number) => {
   }).format(amount).replace('LKR', 'Rs.');
 };
 
+// Fixed: Corrected property name from payment.amount to payment.paidAmount as per types.ts
 export const generateStudentPaymentMsg = (student: Student, payment: Omit<StudentPayment, 'id'>) => {
   return `Dear Parent,
 Payment received successfully.
 Student Name: ${student.name}
 Grade: ${payment.grade}
 Month: ${payment.month}
-Amount Paid: Rs ${payment.amount}
+Amount Paid: Rs ${payment.paidAmount}
 Thank you.`;
 };
 
