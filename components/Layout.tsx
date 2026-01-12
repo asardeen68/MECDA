@@ -12,6 +12,7 @@ const navItems = [
   { name: 'Payments', path: '/payments', icon: 'fa-credit-card' },
   { name: 'Reports', path: '/reports', icon: 'fa-file-invoice' },
   { name: 'Settings', path: '/settings', icon: 'fa-sliders' },
+  { name: 'Logout', path: '/logout', icon: 'fa-right-from-bracket' },
 ];
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -46,6 +47,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               className={`
                 flex items-center gap-4 px-4 py-3 rounded-xl transition-all
                 ${location.pathname === item.path ? 'bg-white text-indigo-700 font-bold shadow-md' : 'hover:bg-indigo-600'}
+                ${item.name === 'Logout' ? 'mt-8 text-red-100 hover:text-white hover:bg-red-600/20' : ''}
               `}
             >
               <i className={`fa-solid ${item.icon} w-6 text-center`}></i>
