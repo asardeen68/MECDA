@@ -1,4 +1,3 @@
-
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { exportDualReports, formatCurrency } from '../utils';
@@ -12,12 +11,10 @@ const Reports: React.FC = () => {
   const handleExportAttendance = (grade: string | 'All') => {
     const headers = ['Student ID', 'Student Name', 'Grade', 'Subject', 'Total Classes', 'Attended', 'Percentage'];
     
-    // Group attendance by student and subject
     const reportData: any[][] = [];
     const filteredStudents = students.filter(s => grade === 'All' || s.grade === grade);
 
     filteredStudents.forEach(student => {
-      // Get all unique subjects for this grade
       const studentSchedules = schedules.filter(s => s.grade === student.grade && s.month === selectedReportMonth && s.year === selectedReportYear);
       const subjects = Array.from(new Set(studentSchedules.map(s => s.subject)));
 
@@ -75,28 +72,63 @@ const Reports: React.FC = () => {
   };
 
   const handleExportTeacherSalaries = () => {
-    const headers = ['Teacher Name', 'Month', 'Classes', 'Hours', 'Payable', 'Paid', 'Date'];
+    const headers = ['Teacher Name', 'Grades Taught', 'Month', 'Classes', 'Hours', 'Payable', 'Paid', 'Payment Date'];
     const targetPeriod = `${selectedReportMonth} ${selectedReportYear}`;
     
-    const data = teacherPayments
-      .filter(p => p.month === targetPeriod)
-      .map(p => {
-        const teacher = teachers.find(t => t.id === p.teacherId);
-        return [
-          teacher?.name || 'Unknown',
-          p.month,
-          p.totalClasses,
-          p.totalHours,
-          formatCurrency(p.amountPayable),
-          formatCurrency(p.amountPaid),
-          p.date
-        ];
-      });
-
-    if (data.length === 0) {
+    const filteredPayments = teacherPayments.filter(p => p.month === targetPeriod);
+    
+    if (filteredPayments.length === 0) {
       alert(`No salary records found for ${targetPeriod}`);
       return;
     }
+
+    let totalHrs = 0;
+    let totalPayable = 0;
+    let totalPaid = 0;
+
+    const data = filteredPayments.map(p => {
+      const teacher = teachers.find(t => t.id === p.teacherId);
+      
+      // Calculate dynamic grades from schedules for this teacher in this period
+      const targetSchedules = schedules.filter(s => 
+        s.teacherId === p.teacherId && 
+        s.month === selectedReportMonth && 
+        s.year === selectedReportYear
+      );
+      
+      const sessionGrades = Array.from(new Set(targetSchedules.map(s => s.grade)))
+        /* Fix: Explicitly handle sorting by casting values to any and then string to satisfy parseInt and avoid unknown type inference */
+        .sort((a: any, b: any) => parseInt(a as string) - parseInt(b as string))
+        .map(g => `G${g}`)
+        .join(', ') || 'N/A';
+      
+      totalHrs += p.totalHours;
+      totalPayable += p.amountPayable;
+      totalPaid += p.amountPaid;
+
+      return [
+        teacher?.name || 'Unknown',
+        sessionGrades,
+        p.month,
+        p.totalClasses,
+        p.totalHours,
+        formatCurrency(p.amountPayable),
+        formatCurrency(p.amountPaid),
+        p.date
+      ];
+    });
+
+    // Add Detailed Summary Row
+    data.push([
+      'TOTAL SUMMARY',
+      '',
+      '',
+      '',
+      `Total Hrs: ${totalHrs.toFixed(2)}`,
+      `Total Payable: ${formatCurrency(totalPayable)}`,
+      `Total Paid: ${formatCurrency(totalPaid)}`,
+      ''
+    ]);
 
     exportDualReports(
       academyInfo, 
@@ -107,11 +139,15 @@ const Reports: React.FC = () => {
     );
   };
 
-  const totalTeacherPayout = useMemo(() => {
+  const teacherStats = useMemo(() => {
     const targetPeriod = `${selectedReportMonth} ${selectedReportYear}`;
-    return teacherPayments
-      .filter(p => p.month === targetPeriod)
-      .reduce((acc, p) => acc + p.amountPaid, 0);
+    const filtered = teacherPayments.filter(p => p.month === targetPeriod);
+    
+    return {
+      paid: filtered.reduce((acc, p) => acc + p.amountPaid, 0),
+      payable: filtered.reduce((acc, p) => acc + p.amountPayable, 0),
+      hours: filtered.reduce((acc, p) => acc + p.totalHours, 0)
+    };
   }, [teacherPayments, selectedReportMonth, selectedReportYear]);
 
   const totalCollections = useMemo(() => {
@@ -154,7 +190,7 @@ const Reports: React.FC = () => {
         />
         <ReportCard 
           title="Teacher Salaries" 
-          desc="Detailed breakdown of hours worked and session rates per teacher."
+          desc="Breakdown of payout by sessions, hours, and dynamic grades taught per teacher."
           icon="fa-money-check-dollar"
           color="text-indigo-600"
           onExport={handleExportTeacherSalaries}
@@ -179,7 +215,6 @@ const Reports: React.FC = () => {
         </div>
       </div>
 
-      {/* Financial Overview Section */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden mt-8">
         <div className="px-8 py-5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -188,7 +223,7 @@ const Reports: React.FC = () => {
           </div>
         </div>
         <div className="p-8">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
              <div className="p-8 bg-emerald-50 rounded-2xl border border-emerald-100 flex items-center justify-between">
                 <div>
                   <p className="text-emerald-700 font-bold text-sm uppercase mb-1 tracking-wider">Total Collections</p>
@@ -200,13 +235,24 @@ const Reports: React.FC = () => {
              </div>
              <div className="p-8 bg-indigo-50 rounded-2xl border border-indigo-100 flex items-center justify-between">
                 <div>
-                  <p className="text-indigo-700 font-bold text-sm uppercase mb-1 tracking-wider">Teacher Payouts</p>
-                  <p className="text-3xl font-black text-indigo-800">{formatCurrency(totalTeacherPayout)}</p>
+                  <p className="text-indigo-700 font-bold text-sm uppercase mb-1 tracking-wider">Teacher Payouts (Paid)</p>
+                  <p className="text-3xl font-black text-indigo-800">{formatCurrency(teacherStats.paid)}</p>
                 </div>
                 <div className="text-indigo-200 text-5xl">
                   <i className="fa-solid fa-hand-holding-dollar"></i>
                 </div>
              </div>
+           </div>
+
+           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Teacher Payable</span>
+                <span className="text-lg font-black text-gray-800">{formatCurrency(teacherStats.payable)}</span>
+              </div>
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">Total Teaching Hours</span>
+                <span className="text-lg font-black text-gray-800">{teacherStats.hours.toFixed(2)} Hrs</span>
+              </div>
            </div>
         </div>
       </div>
