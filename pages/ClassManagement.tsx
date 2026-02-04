@@ -5,12 +5,13 @@ import { Grade, ClassSchedule } from '../types';
 import { calculateHours, exportDualReports, formatCurrency } from '../utils';
 
 const ClassManagement: React.FC = () => {
-  const { schedules, teachers, addSchedule, deleteSchedule, academyInfo } = useStore();
+  const { schedules, teachers, addSchedule, updateSchedule, deleteSchedule, academyInfo } = useStore();
   const [showModal, setShowModal] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState<ClassSchedule | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'timetable'>('list');
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('All');
 
-  const [formData, setFormData] = useState<Omit<ClassSchedule, 'id'>>({
+  const initialFormState: Omit<ClassSchedule, 'id'> = {
     grade: Grade.G6,
     subject: '',
     teacherId: '',
@@ -21,13 +22,33 @@ const ClassManagement: React.FC = () => {
     rateOverride: 0,
     month: new Date().toLocaleString('default', { month: 'long' }),
     year: new Date().getFullYear().toString()
-  });
+  };
+
+  const [formData, setFormData] = useState<Omit<ClassSchedule, 'id'>>(initialFormState);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const hours = calculateHours(formData.startTime, formData.endTime);
-    addSchedule({ ...formData, totalHours: hours });
+    const scheduleData = { ...formData, totalHours: hours };
+    
+    if (editingSchedule) {
+      updateSchedule({ ...scheduleData, id: editingSchedule.id });
+    } else {
+      addSchedule(scheduleData);
+    }
+    closeModal();
+  };
+
+  const openEdit = (s: ClassSchedule) => {
+    setEditingSchedule(s);
+    setFormData(s);
+    setShowModal(true);
+  };
+
+  const closeModal = () => {
     setShowModal(false);
+    setEditingSchedule(null);
+    setFormData(initialFormState);
   };
 
   const activeTeachers = teachers.filter(t => t.status === 'Active');
@@ -80,7 +101,7 @@ const ClassManagement: React.FC = () => {
             <i className="fa-solid fa-file-pdf"></i> Download
           </button>
           <button 
-            onClick={() => setShowModal(true)}
+            onClick={() => { setEditingSchedule(null); setFormData(initialFormState); setShowModal(true); }}
             className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-100"
           >
             <i className="fa-solid fa-calendar-plus"></i> Schedule Class
@@ -136,7 +157,10 @@ const ClassManagement: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 font-black text-emerald-600">{formatCurrency(s.rateOverride || 0)}</td>
                       <td className="px-6 py-4">
-                        <div className="flex justify-center">
+                        <div className="flex justify-center gap-2">
+                          <button onClick={() => openEdit(s)} className="text-gray-400 hover:text-indigo-600 w-9 h-9 rounded-lg hover:bg-indigo-50 transition-all flex items-center justify-center">
+                            <i className="fa-solid fa-pen"></i>
+                          </button>
                           <button onClick={() => deleteSchedule(s.id)} className="text-gray-400 hover:text-red-600 w-9 h-9 rounded-lg hover:bg-red-50 transition-all flex items-center justify-center">
                             <i className="fa-solid fa-trash"></i>
                           </button>
@@ -161,9 +185,14 @@ const ClassManagement: React.FC = () => {
                   <div className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-widest">
                     Grade {s.grade}
                   </div>
-                  <button onClick={() => deleteSchedule(s.id)} className="text-gray-300 hover:text-red-500 transition-colors">
-                    <i className="fa-solid fa-xmark"></i>
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={() => openEdit(s)} className="text-gray-300 hover:text-indigo-600 transition-colors">
+                      <i className="fa-solid fa-pen text-sm"></i>
+                    </button>
+                    <button onClick={() => deleteSchedule(s.id)} className="text-gray-300 hover:text-red-500 transition-colors">
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
+                  </div>
                 </div>
                 <h3 className="text-lg font-black text-gray-800 mb-1">{s.subject}</h3>
                 <p className="text-sm text-gray-500 font-bold mb-4 flex items-center gap-2">
@@ -191,8 +220,8 @@ const ClassManagement: React.FC = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl animate-scaleIn">
             <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50">
-              <h2 className="text-xl font-black text-indigo-900 uppercase tracking-widest">Schedule New Session</h2>
-              <button onClick={() => setShowModal(false)} className="text-indigo-900 hover:bg-indigo-100 p-2 rounded-full transition-colors"><i className="fa-solid fa-xmark"></i></button>
+              <h2 className="text-xl font-black text-indigo-900 uppercase tracking-widest">{editingSchedule ? 'Edit Session' : 'Schedule New Session'}</h2>
+              <button onClick={closeModal} className="text-indigo-900 hover:bg-indigo-100 p-2 rounded-full transition-colors"><i className="fa-solid fa-xmark"></i></button>
             </div>
             <form onSubmit={handleSubmit} className="p-8 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -240,8 +269,10 @@ const ClassManagement: React.FC = () => {
                 </div>
               </div>
               <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowModal(false)} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all">Cancel</button>
-                <button type="submit" className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 shadow-lg shadow-indigo-200 uppercase tracking-widest">Commit to Schedule</button>
+                <button type="button" onClick={closeModal} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all">Cancel</button>
+                <button type="submit" className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-xl font-black hover:bg-indigo-700 shadow-lg shadow-indigo-200 uppercase tracking-widest">
+                  {editingSchedule ? 'Update Session' : 'Commit to Schedule'}
+                </button>
               </div>
             </form>
           </div>

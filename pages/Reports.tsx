@@ -51,7 +51,7 @@ const Reports: React.FC = () => {
       `Attendance Summary - ${selectedReportMonth} ${selectedReportYear} (${grade === 'All' ? 'All Classes' : 'Grade ' + grade})`, 
       headers, 
       reportData, 
-      `Attendance_Report_${selectedReportMonth}`
+      `Attendance_Report_${selectedReportMonth}_${selectedReportYear}`
     );
   };
 
@@ -71,11 +71,54 @@ const Reports: React.FC = () => {
           p.status
         ];
       });
-    exportDualReports(academyInfo, `Fee Collection Report - ${selectedReportMonth} ${selectedReportYear}`, headers, data, `Financial_Report_${selectedReportMonth}`);
+    exportDualReports(academyInfo, `Fee Collection Report - ${selectedReportMonth} ${selectedReportYear}`, headers, data, `Financial_Report_${selectedReportMonth}_${selectedReportYear}`);
   };
 
-  const totalTeacherPayout = useMemo(() => teacherPayments.reduce((acc, p) => acc + p.amountPaid, 0), [teacherPayments]);
-  const totalCollections = useMemo(() => studentPayments.reduce((acc, p) => acc + p.paidAmount, 0), [studentPayments]);
+  const handleExportTeacherSalaries = () => {
+    const headers = ['Teacher Name', 'Month', 'Classes', 'Hours', 'Payable', 'Paid', 'Date'];
+    const targetPeriod = `${selectedReportMonth} ${selectedReportYear}`;
+    
+    const data = teacherPayments
+      .filter(p => p.month === targetPeriod)
+      .map(p => {
+        const teacher = teachers.find(t => t.id === p.teacherId);
+        return [
+          teacher?.name || 'Unknown',
+          p.month,
+          p.totalClasses,
+          p.totalHours,
+          formatCurrency(p.amountPayable),
+          formatCurrency(p.amountPaid),
+          p.date
+        ];
+      });
+
+    if (data.length === 0) {
+      alert(`No salary records found for ${targetPeriod}`);
+      return;
+    }
+
+    exportDualReports(
+      academyInfo, 
+      `Teacher Salary Report - ${targetPeriod}`, 
+      headers, 
+      data, 
+      `Teacher_Salaries_${selectedReportMonth}_${selectedReportYear}`
+    );
+  };
+
+  const totalTeacherPayout = useMemo(() => {
+    const targetPeriod = `${selectedReportMonth} ${selectedReportYear}`;
+    return teacherPayments
+      .filter(p => p.month === targetPeriod)
+      .reduce((acc, p) => acc + p.amountPaid, 0);
+  }, [teacherPayments, selectedReportMonth, selectedReportYear]);
+
+  const totalCollections = useMemo(() => {
+    return studentPayments
+      .filter(p => p.month === selectedReportMonth && p.year === selectedReportYear)
+      .reduce((acc, p) => acc + p.paidAmount, 0);
+  }, [studentPayments, selectedReportMonth, selectedReportYear]);
 
   return (
     <div className="space-y-8 animate-fadeIn">
@@ -89,7 +132,7 @@ const Reports: React.FC = () => {
               {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => <option key={m} value={m}>{m}</option>)}
            </select>
            <select value={selectedReportYear} onChange={e => setSelectedReportYear(e.target.value)} className="px-3 py-2 bg-gray-50 rounded-xl font-bold text-xs outline-none">
-              {['2024','2025','2026'].map(y => <option key={y} value={y}>{y}</option>)}
+              {['2024','2025','2026', '2027'].map(y => <option key={y} value={y}>{y}</option>)}
            </select>
         </div>
       </header>
@@ -114,7 +157,7 @@ const Reports: React.FC = () => {
           desc="Detailed breakdown of hours worked and session rates per teacher."
           icon="fa-money-check-dollar"
           color="text-indigo-600"
-          onExport={() => alert('Generating Detailed Teacher Payout Report...')}
+          onExport={handleExportTeacherSalaries}
         />
       </div>
 
@@ -141,7 +184,7 @@ const Reports: React.FC = () => {
         <div className="px-8 py-5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <i className="fa-solid fa-chart-line text-indigo-500"></i>
-            <h2 className="font-bold text-gray-700">Financial Snapshot</h2>
+            <h2 className="font-bold text-gray-700">Financial Snapshot ({selectedReportMonth} {selectedReportYear})</h2>
           </div>
         </div>
         <div className="p-8">
