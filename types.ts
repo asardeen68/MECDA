@@ -94,6 +94,7 @@ export interface TeacherPayment {
   id: string;
   teacherId: string;
   month: string;
+  grade?: Grade | 'All'; // New: support filtering payout by grade
   totalClasses: number;
   totalHours: number;
   amountPayable: number;

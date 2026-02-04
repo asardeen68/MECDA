@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../store';
 import { Grade, PaymentStatus, StudentPayment, TeacherPayment, PaymentType } from '../types';
-import { formatCurrency, generateStudentPaymentMsg, sendWhatsAppMessage } from '../utils';
+import { formatCurrency, generateStudentPaymentMsg, sendWhatsAppMessage, exportDualReports } from '../utils';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const YEARS = ['2024', '2025', '2026', '2027'];
@@ -20,7 +20,8 @@ const Payments: React.FC = () => {
     teacherPayments, 
     addTeacherPayment,
     updateTeacherPayment,
-    deleteTeacherPayment
+    deleteTeacherPayment,
+    academyInfo
   } = useStore();
   
   const [activeTab, setActiveTab] = useState<'students' | 'teachers'>('students');
@@ -31,6 +32,10 @@ const Payments: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toLocaleString('default', { month: 'long' }));
   const [selectedYear, setSelectedYear] = useState<string>(new Date().getFullYear().toString());
   const [selectedGradeFilter, setSelectedGradeFilter] = useState<string>('All');
+  
+  // Teacher View Specific Filters
+  const [teacherSearch, setTeacherSearch] = useState('');
+  const [teacherGradeFilter, setTeacherGradeFilter] = useState<string>('All');
 
   // Student Payment Form State
   const initialStudentForm: Omit<StudentPayment, 'id'> = {
@@ -96,7 +101,6 @@ const Payments: React.FC = () => {
       const studentsInGrade = students.filter(s => s.grade === grade && s.status === 'Active');
       
       const collected = payments.reduce((acc, p) => acc + p.paidAmount, 0);
-      // We use the actually entered fees for paid records, and the default for expected ones not yet paid
       const expectedFromUnpaid = (studentsInGrade.length - payments.length) * DEFAULT_MONTHLY_FEE;
       const totalOutstanding = payments.reduce((acc, p) => acc + p.outstandingAmount, 0) + expectedFromUnpaid;
       
@@ -116,10 +120,8 @@ const Payments: React.FC = () => {
     return summaries;
   }, [studentPayments, students, selectedMonth, selectedYear]);
 
-  // Filtering students in the modal based on selected grade
   const studentsInSelectedGrade = students.filter(s => s.grade === studentFormData.grade && s.status === 'Active');
 
-  // Filtered payments for the table
   const filteredStudentPayments = studentPayments.filter(p => {
     const gradeMatch = selectedGradeFilter === 'All' || p.grade === selectedGradeFilter;
     const monthMatch = p.month === selectedMonth;
@@ -128,9 +130,15 @@ const Payments: React.FC = () => {
   });
 
   // Teacher Salary Logic
+  const [modalGrade, setModalGrade] = useState<Grade | 'All'>('All');
+  const [modalMonth, setModalMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
+  const [modalYear, setModalYear] = useState(new Date().getFullYear().toString());
+  const [currentSessions, setCurrentSessions] = useState<any[]>([]);
+
   const [teacherFormData, setTeacherFormData] = useState<Omit<TeacherPayment, 'id'>>({
     teacherId: '',
     month: `${new Date().toLocaleString('default', { month: 'long' })} ${new Date().getFullYear()}`,
+    grade: 'All',
     totalClasses: 0,
     totalHours: 0,
     amountPayable: 0,
@@ -138,17 +146,17 @@ const Payments: React.FC = () => {
     date: new Date().toISOString().split('T')[0]
   });
 
-  const [modalMonth, setModalMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
-  const [modalYear, setModalYear] = useState(new Date().getFullYear().toString());
-
   useEffect(() => {
     if (showTeacherModal && teacherFormData.teacherId) {
       const teacherSchedules = schedules.filter(s => 
         s.teacherId === teacherFormData.teacherId && 
         s.month === modalMonth && 
-        s.year === modalYear
+        s.year === modalYear &&
+        (modalGrade === 'All' || s.grade === modalGrade)
       );
       
+      setCurrentSessions(teacherSchedules);
+
       const teacher = teachers.find(t => t.id === teacherFormData.teacherId);
       const totalHours = teacherSchedules.reduce((acc, s) => acc + s.totalHours, 0);
       const totalClasses = teacherSchedules.length;
@@ -161,13 +169,14 @@ const Payments: React.FC = () => {
       setTeacherFormData(prev => ({
         ...prev,
         month: `${modalMonth} ${modalYear}`,
+        grade: modalGrade,
         totalClasses,
         totalHours,
         amountPayable,
-        amountPaid: prev.amountPaid === 0 ? amountPayable : prev.amountPaid 
+        amountPaid: prev.amountPaid === 0 || prev.amountPayable === prev.amountPaid ? amountPayable : prev.amountPaid 
       }));
     }
-  }, [teacherFormData.teacherId, modalMonth, modalYear, schedules, teachers, showTeacherModal]);
+  }, [teacherFormData.teacherId, modalMonth, modalYear, modalGrade, schedules, teachers, showTeacherModal]);
 
   const handleTeacherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -180,7 +189,54 @@ const Payments: React.FC = () => {
     setEditingPaymentId(null);
   };
 
-  const filteredTeacherPayments = teacherPayments.filter(p => p.month === `${selectedMonth} ${selectedYear}`);
+  const filteredTeacherPayments = useMemo(() => {
+    return teacherPayments.filter(p => {
+      const teacher = teachers.find(t => t.id === p.teacherId);
+      const monthMatch = p.month === `${selectedMonth} ${selectedYear}`;
+      const searchMatch = !teacherSearch || teacher?.name.toLowerCase().includes(teacherSearch.toLowerCase());
+      const gradeMatch = teacherGradeFilter === 'All' || p.grade === teacherGradeFilter;
+      return monthMatch && searchMatch && gradeMatch;
+    });
+  }, [teacherPayments, teachers, selectedMonth, selectedYear, teacherSearch, teacherGradeFilter]);
+
+  const handleExportTeacherPayments = () => {
+    const headers = ['Teacher Name', 'Month', 'Grade', 'Classes', 'Hours', 'Payable', 'Paid', 'Payment Date'];
+    const data = filteredTeacherPayments.map(p => {
+      const teacher = teachers.find(t => t.id === p.teacherId);
+      return [
+        teacher?.name || 'Unknown',
+        p.month,
+        p.grade === 'All' ? 'Combined' : `Grade ${p.grade}`,
+        p.totalClasses,
+        p.totalHours.toFixed(2),
+        formatCurrency(p.amountPayable),
+        formatCurrency(p.amountPaid),
+        p.date
+      ];
+    });
+
+    const totalPayable = filteredTeacherPayments.reduce((acc, p) => acc + p.amountPayable, 0);
+    const totalPaid = filteredTeacherPayments.reduce((acc, p) => acc + p.amountPaid, 0);
+
+    data.push([
+      'TOTAL',
+      '',
+      '',
+      '',
+      '',
+      formatCurrency(totalPayable),
+      formatCurrency(totalPaid),
+      ''
+    ]);
+
+    exportDualReports(
+      academyInfo, 
+      `Filtered Teacher Salary Report - ${selectedMonth} ${selectedYear}`, 
+      headers, 
+      data, 
+      `Teacher_Payments_${selectedMonth}_${selectedYear}`
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -197,7 +253,7 @@ const Payments: React.FC = () => {
 
       {activeTab === 'students' ? (
         <div className="space-y-8 animate-fadeIn">
-          {/* Monthly Summaries Grid */}
+          {/* ... existing students tab content ... */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {Object.entries(classSummaries).map(([grade, data]: [string, any]) => (
               <div key={grade} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -300,18 +356,48 @@ const Payments: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4 animate-fadeIn">
-          <div className="flex flex-col sm:flex-row justify-between items-end gap-4">
-            <div className="flex gap-2">
-              <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="px-4 py-2 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 shadow-sm outline-none">
-                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="px-4 py-2 rounded-xl border border-gray-200 bg-white font-bold text-gray-700 shadow-sm outline-none">
-                {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
+          {/* Enhanced Teacher Filter Bar */}
+          <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row gap-4">
+               <div className="flex-1 relative">
+                 <i className="fa-solid fa-magnifying-glass absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                 <input 
+                  type="text" 
+                  placeholder="Search teacher by name..." 
+                  value={teacherSearch}
+                  onChange={e => setTeacherSearch(e.target.value)}
+                  className="w-full pl-12 pr-4 py-3 rounded-xl bg-gray-50 border border-gray-100 focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                 />
+               </div>
+               <div className="flex gap-2">
+                  <select value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500">
+                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  <select value={selectedYear} onChange={e => setSelectedYear(e.target.value)} className="px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500">
+                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                  <select value={teacherGradeFilter} onChange={e => setTeacherGradeFilter(e.target.value)} className="px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 font-bold text-indigo-600 outline-none focus:ring-2 focus:ring-indigo-500">
+                    <option value="All">All Grades</option>
+                    {Object.values(Grade).map(g => <option key={g} value={g}>Grade {g}</option>)}
+                  </select>
+               </div>
             </div>
-            <button onClick={() => { setEditingPaymentId(null); setShowTeacherModal(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition flex items-center gap-2 shadow-lg shadow-indigo-100">
-              <i className="fa-solid fa-calculator"></i> Calculate Salary
-            </button>
+            
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 border-t border-gray-50">
+               <button 
+                onClick={handleExportTeacherPayments}
+                disabled={filteredTeacherPayments.length === 0}
+                className="w-full sm:w-auto px-6 py-3 bg-white border border-gray-200 text-gray-600 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 disabled:opacity-50"
+               >
+                 <i className="fa-solid fa-file-export"></i> Export Visible List
+               </button>
+               <button 
+                onClick={() => { setEditingPaymentId(null); setModalGrade('All'); setShowTeacherModal(true); }} 
+                className="w-full sm:w-auto bg-indigo-600 text-white px-8 py-3 rounded-xl hover:bg-indigo-700 transition flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 font-black uppercase tracking-widest text-xs"
+               >
+                 <i className="fa-solid fa-calculator"></i> Calculate Payout
+               </button>
+            </div>
           </div>
           
           <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
@@ -321,6 +407,7 @@ const Payments: React.FC = () => {
                   <tr>
                     <th className="px-6 py-4 font-semibold text-gray-600">Teacher</th>
                     <th className="px-6 py-4 font-semibold text-gray-600">Month</th>
+                    <th className="px-6 py-4 font-semibold text-gray-600">Grade</th>
                     <th className="px-6 py-4 font-semibold text-gray-600">Payable</th>
                     <th className="px-6 py-4 font-semibold text-gray-600">Paid</th>
                     <th className="px-6 py-4 font-semibold text-gray-600 text-center">Actions</th>
@@ -331,18 +418,31 @@ const Payments: React.FC = () => {
                     const teacher = teachers.find(t => t.id === p.teacherId);
                     return (
                       <tr key={p.id} className="hover:bg-gray-50 transition-colors group">
-                        <td className="px-6 py-4 font-bold text-gray-800">{teacher?.name || 'Unknown'}</td>
-                        <td className="px-6 py-4 text-gray-500">{p.month}</td>
+                        <td className="px-6 py-4">
+                           <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center text-[10px] font-black">{teacher?.name.charAt(0)}</div>
+                              <span className="font-bold text-gray-800">{teacher?.name || 'Unknown'}</span>
+                           </div>
+                        </td>
+                        <td className="px-6 py-4 text-gray-500 font-medium">{p.month}</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${p.grade === 'All' ? 'bg-indigo-50 text-indigo-700' : 'bg-amber-50 text-amber-700'}`}>
+                            {p.grade === 'All' ? 'Combined' : `Grade ${p.grade}`}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 font-black text-gray-900">{formatCurrency(p.amountPayable)}</td>
                         <td className="px-6 py-4 font-black text-emerald-600">{formatCurrency(p.amountPaid)}</td>
                         <td className="px-6 py-4 text-center">
-                          <button onClick={() => deleteTeacherPayment(p.id)} className="text-red-600 hover:text-red-800"><i className="fa-solid fa-trash"></i></button>
+                          <button onClick={() => deleteTeacherPayment(p.id)} className="w-8 h-8 rounded-lg bg-gray-50 text-red-400 hover:text-red-600 hover:bg-red-50 transition-all"><i className="fa-solid fa-trash text-xs"></i></button>
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+              {filteredTeacherPayments.length === 0 && (
+                <div className="p-20 text-center text-gray-400 italic">No records found matching your query.</div>
+              )}
             </div>
           </div>
         </div>
@@ -466,43 +566,131 @@ const Payments: React.FC = () => {
       {/* Teacher Salary Modal */}
       {showTeacherModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
-            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50 text-indigo-900">
+          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-scaleIn flex flex-col">
+            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50 text-indigo-900 shrink-0">
               <h2 className="text-xl font-extrabold uppercase tracking-widest">Teacher Salary Calculation</h2>
               <button onClick={() => setShowTeacherModal(false)} className="hover:bg-indigo-100 p-2 rounded-full transition-colors"><i className="fa-solid fa-xmark"></i></button>
             </div>
-            <form onSubmit={handleTeacherSubmit} className="p-8 space-y-6">
+            
+            <form onSubmit={handleTeacherSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 gap-6">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Teacher</label>
-                  <select required value={teacherFormData.teacherId} onChange={e => setTeacherFormData({...teacherFormData, teacherId: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <option value="">Choose Teacher...</option>
-                    {teachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject})</option>)}
-                  </select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <select value={modalMonth} onChange={e => setModalMonth(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200">
-                    {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                  <select value={modalYear} onChange={e => setModalYear(e.target.value)} className="w-full px-4 py-3 rounded-xl border border-gray-200">
-                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
-                </div>
-                {teacherFormData.teacherId && (
-                  <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 text-center">
-                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">Calculated Payable (Session Rates Applied)</p>
-                    <p className="text-3xl font-black text-indigo-700">{formatCurrency(teacherFormData.amountPayable)}</p>
-                    <p className="text-xs text-indigo-300 mt-1 font-bold">Total classes: {teacherFormData.totalClasses} | Total hours: {teacherFormData.totalHours}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">1. Select Teacher</label>
+                    <select required value={teacherFormData.teacherId} onChange={e => setTeacherFormData({...teacherFormData, teacherId: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold">
+                      <option value="">Choose Teacher...</option>
+                      {teachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject})</option>)}
+                    </select>
                   </div>
-                )}
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">2. Period Selection</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select value={modalMonth} onChange={e => setModalMonth(e.target.value)} className="w-full px-2 py-3 rounded-xl border border-gray-200 outline-none text-sm font-bold">
+                        {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <select value={modalYear} onChange={e => setModalYear(e.target.value)} className="w-full px-2 py-3 rounded-xl border border-gray-200 outline-none text-sm font-bold">
+                        {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2">Amount Paid (Rs)</label>
-                  <input type="number" required value={teacherFormData.amountPaid} onChange={e => setTeacherFormData({...teacherFormData, amountPaid: parseFloat(e.target.value)})} className="w-full px-4 py-4 rounded-xl border border-gray-200 text-2xl font-black text-indigo-700 text-center" />
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">3. Select Grade (View Details)</label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setModalGrade('All')}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${modalGrade === 'All' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                    >
+                      ALL SESSIONS
+                    </button>
+                    {Object.values(Grade).map(g => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setModalGrade(g)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${modalGrade === g ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
+                      >
+                        GRADE {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {teacherFormData.teacherId && (
+                  <>
+                    <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 text-center relative overflow-hidden shrink-0">
+                      <div className="absolute top-0 right-0 p-2">
+                         <span className="px-2 py-1 bg-white/50 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest">
+                           Payable Preview
+                         </span>
+                      </div>
+                      <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">
+                        Calculated Payout ({modalGrade === 'All' ? 'Combined Total' : `Grade ${modalGrade} Sessions`})
+                      </p>
+                      <p className="text-3xl font-black text-indigo-700">{formatCurrency(teacherFormData.amountPayable)}</p>
+                      <div className="flex justify-center gap-4 mt-2">
+                        <p className="text-xs text-indigo-400 font-bold"><i className="fa-solid fa-chalkboard text-[10px]"></i> {teacherFormData.totalClasses} Sessions</p>
+                        <p className="text-xs text-indigo-400 font-bold"><i className="fa-regular fa-clock text-[10px]"></i> {teacherFormData.totalHours.toFixed(2)} Total Hrs</p>
+                      </div>
+                    </div>
+
+                    {/* NEW: View section for Session Breakdown */}
+                    <div className="space-y-3">
+                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Session breakdown list</h3>
+                      <div className="max-h-48 overflow-y-auto rounded-2xl border border-gray-100 divide-y divide-gray-50 bg-gray-50/50">
+                        {currentSessions.length > 0 ? currentSessions.map((session, idx) => {
+                          const teacher = teachers.find(t => t.id === teacherFormData.teacherId);
+                          const sessionRate = session.rateOverride || teacher?.rate || 0;
+                          const sessionPay = teacher?.paymentType === PaymentType.HOURLY 
+                            ? (session.totalHours * sessionRate)
+                            : (sessionRate / (currentSessions.length || 1));
+
+                          return (
+                            <div key={session.id} className="p-4 flex justify-between items-center hover:bg-white transition-colors">
+                              <div className="flex items-center gap-3">
+                                <div className="text-center w-8">
+                                  <p className="text-[9px] font-black text-indigo-300 uppercase leading-none">{idx + 1}</p>
+                                </div>
+                                <div>
+                                  <p className="text-xs font-bold text-gray-800">{session.subject} (G{session.grade})</p>
+                                  <p className="text-[10px] text-gray-400 font-medium">{session.date} • {session.startTime} - {session.endTime}</p>
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs font-black text-indigo-600">{formatCurrency(sessionPay)}</p>
+                                <p className="text-[9px] text-gray-400 font-black uppercase tracking-tighter">{session.totalHours} Hrs @ {formatCurrency(sessionRate)}</p>
+                              </div>
+                            </div>
+                          )
+                        }) : (
+                          <div className="p-8 text-center text-gray-400 italic text-sm">
+                            No sessions found for the selected grade and period.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">4. Actual Amount Paid (Rs)</label>
+                  <input 
+                    type="number" 
+                    required 
+                    value={teacherFormData.amountPaid} 
+                    onChange={e => setTeacherFormData({...teacherFormData, amountPaid: parseFloat(e.target.value) || 0})} 
+                    className="w-full px-4 py-4 rounded-xl border-2 border-indigo-600 text-2xl font-black text-indigo-700 text-center focus:ring-0 outline-none shadow-inner" 
+                  />
                 </div>
               </div>
-              <div className="flex gap-4 pt-4">
-                <button type="button" onClick={() => setShowTeacherModal(false)} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600">Cancel</button>
-                <button type="submit" className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg">Commit Payment</button>
+
+              <div className="flex gap-4 pt-4 sticky bottom-0 bg-white border-t border-gray-50 -mx-8 px-8 py-6">
+                <button type="button" onClick={() => setShowTeacherModal(false)} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all uppercase tracking-widest text-xs">Cancel</button>
+                <button type="submit" className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs">
+                  Commit Payout
+                </button>
               </div>
             </form>
           </div>
