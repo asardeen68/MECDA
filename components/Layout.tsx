@@ -33,13 +33,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Sidebar */}
       <aside className={`
         fixed inset-y-0 left-0 z-40 w-64 bg-indigo-700 text-white transform transition-transform duration-300 ease-in-out
-        md:relative md:translate-x-0
+        md:relative md:translate-x-0 flex flex-col
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         <div className="p-6">
           <h2 className="text-2xl font-bold border-b border-indigo-500 pb-4">MECDA</h2>
         </div>
-        <nav className="mt-4 px-4 space-y-2 overflow-y-auto max-h-[calc(100vh-120px)] scrollbar-hide">
+        
+        <nav className="mt-4 px-4 space-y-2 overflow-y-auto flex-1 scrollbar-hide">
           {navItems.map((item) => (
             <Link
               key={item.path}
@@ -56,6 +57,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             </Link>
           ))}
         </nav>
+
+        {/* Developer Credit Footer */}
+        <div className="p-6 mt-auto border-t border-indigo-600 bg-indigo-800/30">
+           <p className="text-[10px] font-black text-indigo-300 uppercase tracking-widest mb-1">Developer</p>
+           <p className="text-[11px] font-bold text-white leading-tight">
+             Mohamed Asarudeen (SLTS)
+           </p>
+           <p className="text-[9px] text-indigo-400 mt-1">NDT in ICT, HNDIT</p>
+        </div>
       </aside>
 
       {/* Main Content */}

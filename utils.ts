@@ -24,7 +24,6 @@ export const formatCurrency = (amount: number) => {
   }).format(amount).replace('LKR', 'Rs.');
 };
 
-// Fixed: Corrected property name from payment.amount to payment.paidAmount as per types.ts
 export const generateStudentPaymentMsg = (student: Student, payment: Omit<StudentPayment, 'id'>) => {
   return `Dear Parent,
 Payment received successfully.
@@ -35,9 +34,6 @@ Amount Paid: Rs ${payment.paidAmount}
 Thank you.`;
 };
 
-/**
- * Universal Dual-Export Function (PDF & Excel)
- */
 export const exportDualReports = (
   academy: AcademyInfo, 
   title: string, 
@@ -45,44 +41,78 @@ export const exportDualReports = (
   data: any[][], 
   filename: string
 ) => {
-  // 1. Generate PDF
   generatePDF(academy, title, headers, data, filename);
-  
-  // 2. Generate Excel
   generateExcel(academy, title, headers, data, filename);
 };
 
 const generatePDF = (academy: AcademyInfo, title: string, headers: string[], data: any[][], filename: string) => {
   const doc = new (jsPDF as any)();
-  
-  // Academy Header
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // 1. Add Watermark (Centered, Faded)
+  if (academy.logoUrl) {
+    doc.saveGraphicsState();
+    doc.setGState(new (doc as any).GState({ opacity: 0.05 }));
+    const watermarkWidth = 100;
+    const watermarkHeight = 100;
+    doc.addImage(
+      academy.logoUrl, 
+      'PNG', 
+      (pageWidth - watermarkWidth) / 2, 
+      (pageHeight - watermarkHeight) / 2, 
+      watermarkWidth, 
+      watermarkHeight
+    );
+    doc.restoreGraphicsState();
+  }
+
+  // 2. Academy Header with Logo
+  let headerStartY = 20;
+  if (academy.logoUrl) {
+    doc.addImage(academy.logoUrl, 'PNG', 20, 12, 15, 15);
+  }
+
   doc.setFontSize(22);
-  doc.setTextColor(63, 81, 181); // Indigo-ish
-  doc.text(academy.name, 105, 20, { align: 'center' });
+  doc.setTextColor(63, 81, 181);
+  doc.text(academy.name, 40, 22);
   
-  doc.setFontSize(10);
-  doc.setTextColor(100);
-  doc.text(`${academy.address} | Contact: ${academy.contact} | Email: ${academy.email}`, 105, 28, { align: 'center' });
+  doc.setFontSize(9);
+  doc.setTextColor(120);
+  doc.text(`${academy.address}`, 40, 27);
+  doc.text(`Contact: ${academy.contact} | Email: ${academy.email}`, 40, 31);
   
-  doc.setDrawColor(200);
-  doc.line(20, 32, 190, 32);
+  doc.setDrawColor(230);
+  doc.line(20, 36, 190, 36);
   
-  // Report Title
+  // 3. Report Title
   doc.setFontSize(16);
   doc.setTextColor(33, 33, 33);
-  doc.text(title, 20, 45);
-  doc.setFontSize(10);
-  doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 52);
+  doc.text(title, 20, 48);
+  doc.setFontSize(9);
+  doc.setTextColor(150);
+  doc.text(`Generated on: ${new Date().toLocaleString()}`, 20, 54);
+  doc.text(`Developed by: Mohamed Asarudeen (SLTS)`, 190, 54, { align: 'right' });
 
-  // Table
+  // 4. Data Table
   (doc as any).autoTable({
     startY: 60,
     head: [headers],
     body: data,
     theme: 'striped',
-    headStyles: { fillColor: [63, 81, 181] },
-    alternateRowStyles: { fillColor: [245, 247, 250] },
+    headStyles: { fillColor: [63, 81, 181], fontSize: 10 },
+    bodyStyles: { fontSize: 9 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { top: 60 },
+    didDrawPage: (data: any) => {
+      // Re-add watermark on subsequent pages if necessary
+      if (data.pageNumber > 1 && academy.logoUrl) {
+        doc.saveGraphicsState();
+        doc.setGState(new (doc as any).GState({ opacity: 0.05 }));
+        doc.addImage(academy.logoUrl, 'PNG', (pageWidth - 100) / 2, (pageHeight - 100) / 2, 100, 100);
+        doc.restoreGraphicsState();
+      }
+    }
   });
 
   doc.save(`${filename}.pdf`);
@@ -93,6 +123,7 @@ const generateExcel = (academy: AcademyInfo, title: string, headers: string[], d
     [academy.name],
     [academy.address],
     [academy.contact + ' | ' + academy.email],
+    ['Developed by: Mohamed Asarudeen (SLTS)'],
     [],
     [title],
     [`Generated: ${new Date().toLocaleString()}`],
@@ -103,8 +134,6 @@ const generateExcel = (academy: AcademyInfo, title: string, headers: string[], d
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.aoa_to_sheet(worksheetData);
-  
-  // Add some basic column widths
   const wscols = headers.map(() => ({ wch: 20 }));
   ws['!cols'] = wscols;
 

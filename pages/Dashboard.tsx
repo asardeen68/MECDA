@@ -5,12 +5,11 @@ import { formatCurrency } from '../utils';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const Dashboard: React.FC = () => {
-  const { teachers, students, studentPayments, schedules } = useStore();
+  const { teachers, students, studentPayments, schedules, syncing } = useStore();
 
   const stats = [
     { label: 'Active Students', value: students.filter(s => s.status === 'Active').length, icon: 'fa-user-graduate', color: 'bg-blue-500' },
     { label: 'Teachers', value: teachers.length, icon: 'fa-chalkboard-user', color: 'bg-indigo-500' },
-    // Fixed: Corrected property name to paidAmount
     { label: 'Total Revenue', value: formatCurrency(studentPayments.reduce((acc, p) => acc + p.paidAmount, 0)), icon: 'fa-sack-dollar', color: 'bg-emerald-500' },
     { label: 'Classes this Month', value: schedules.length, icon: 'fa-calendar-check', color: 'bg-amber-500' },
   ];
@@ -30,7 +29,15 @@ const Dashboard: React.FC = () => {
     <div className="space-y-8 animate-fadeIn">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Admin Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">Admin Dashboard</h1>
+            {syncing && (
+              <span className="flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse border border-indigo-100">
+                <i className="fa-solid fa-sync fa-spin"></i>
+                Syncing
+              </span>
+            )}
+          </div>
           <p className="text-gray-500">Welcome to MECDA Class Management System.</p>
         </div>
         <div className="bg-white px-4 py-2 rounded-lg shadow-sm border border-gray-100 flex items-center gap-3">
@@ -42,14 +49,15 @@ const Dashboard: React.FC = () => {
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, idx) => (
-          <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-5 hover:shadow-md transition-shadow">
-            <div className={`${stat.color} w-14 h-14 rounded-xl flex items-center justify-center text-white text-2xl`}>
+          <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-5 hover:shadow-md transition-shadow relative overflow-hidden">
+            <div className={`${stat.color} w-14 h-14 rounded-xl flex items-center justify-center text-white text-2xl z-10`}>
               <i className={`fa-solid ${stat.icon}`}></i>
             </div>
-            <div>
+            <div className="z-10">
               <p className="text-sm font-medium text-gray-500 uppercase tracking-wider">{stat.label}</p>
               <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
             </div>
+            {syncing && <div className="absolute inset-0 bg-indigo-50/10 animate-pulse"></div>}
           </div>
         ))}
       </div>
@@ -91,7 +99,6 @@ const Dashboard: React.FC = () => {
                     <p className="text-xs text-gray-500">{p.month}</p>
                   </div>
                   <div className="text-right">
-                    {/* Fixed: Corrected property name to paidAmount */}
                     <p className="text-sm font-bold text-emerald-600">+{formatCurrency(p.paidAmount)}</p>
                     <p className="text-[10px] text-gray-400 uppercase">{p.date}</p>
                   </div>
