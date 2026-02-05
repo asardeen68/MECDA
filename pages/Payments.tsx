@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { useStore } from '../store';
-import { Grade, PaymentStatus, StudentPayment, TeacherPayment, PaymentType } from '../types';
+import { Grade, PaymentStatus, StudentPayment, TeacherPayment, PaymentType, ClassSchedule } from '../types';
 import { formatCurrency, generateStudentPaymentMsg, sendWhatsAppMessage, exportDualReports } from '../utils';
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -93,7 +93,7 @@ const Payments: React.FC = () => {
     setShowStudentModal(true);
   };
 
-  // Summaries calculation for all classes in selected month
+  // Summaries calculation
   const classSummaries = useMemo(() => {
     const summaries: Record<string, any> = {};
     Object.values(Grade).forEach(grade => {
@@ -133,7 +133,7 @@ const Payments: React.FC = () => {
   const [modalGrade, setModalGrade] = useState<Grade | 'All'>('All');
   const [modalMonth, setModalMonth] = useState(new Date().toLocaleString('default', { month: 'long' }));
   const [modalYear, setModalYear] = useState(new Date().getFullYear().toString());
-  const [currentSessions, setCurrentSessions] = useState<any[]>([]);
+  const [currentSessions, setCurrentSessions] = useState<ClassSchedule[]>([]);
 
   const [teacherFormData, setTeacherFormData] = useState<Omit<TeacherPayment, 'id'>>({
     teacherId: '',
@@ -148,35 +148,39 @@ const Payments: React.FC = () => {
 
   useEffect(() => {
     if (showTeacherModal && teacherFormData.teacherId) {
-      const teacherSchedules = schedules.filter(s => 
+      const allPossibleSchedules = schedules.filter(s => 
         s.teacherId === teacherFormData.teacherId && 
         s.month === modalMonth && 
         s.year === modalYear &&
         (modalGrade === 'All' || s.grade === modalGrade)
       );
-      
-      setCurrentSessions(teacherSchedules);
-
-      const teacher = teachers.find(t => t.id === teacherFormData.teacherId);
-      const totalHours = teacherSchedules.reduce((acc, s) => acc + s.totalHours, 0);
-      const totalClasses = teacherSchedules.length;
-
-      const amountPayable = teacherSchedules.reduce((acc, s) => {
-        const rate = s.rateOverride || teacher?.rate || 0;
-        return acc + (teacher?.paymentType === PaymentType.HOURLY ? s.totalHours * rate : rate / (totalClasses || 1));
-      }, 0);
-
-      setTeacherFormData(prev => ({
-        ...prev,
-        month: `${modalMonth} ${modalYear}`,
-        grade: modalGrade,
-        totalClasses,
-        totalHours,
-        amountPayable,
-        amountPaid: prev.amountPaid === 0 || prev.amountPayable === prev.amountPaid ? amountPayable : prev.amountPaid 
-      }));
+      setCurrentSessions(allPossibleSchedules);
     }
-  }, [teacherFormData.teacherId, modalMonth, modalYear, modalGrade, schedules, teachers, showTeacherModal]);
+  }, [teacherFormData.teacherId, modalMonth, modalYear, modalGrade, schedules, showTeacherModal]);
+
+  // Handle live calculation automatically based on filtered sessions
+  useEffect(() => {
+    const teacher = teachers.find(t => t.id === teacherFormData.teacherId);
+    if (!teacher) return;
+
+    const totalHours = currentSessions.reduce((acc, s) => acc + s.totalHours, 0);
+    const totalClasses = currentSessions.length;
+
+    const amountPayable = currentSessions.reduce((acc, s) => {
+      const rate = s.rateOverride || teacher.rate || 0;
+      return acc + (teacher.paymentType === PaymentType.HOURLY ? s.totalHours * rate : rate / (currentSessions.length || 1));
+    }, 0);
+
+    setTeacherFormData(prev => ({
+      ...prev,
+      month: `${modalMonth} ${modalYear}`,
+      grade: modalGrade,
+      totalClasses,
+      totalHours,
+      amountPayable,
+      amountPaid: prev.amountPaid === 0 || prev.amountPayable === prev.amountPaid ? amountPayable : prev.amountPaid
+    }));
+  }, [currentSessions, teacherFormData.teacherId]);
 
   const handleTeacherSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,16 +222,7 @@ const Payments: React.FC = () => {
     const totalPayable = filteredTeacherPayments.reduce((acc, p) => acc + p.amountPayable, 0);
     const totalPaid = filteredTeacherPayments.reduce((acc, p) => acc + p.amountPaid, 0);
 
-    data.push([
-      'TOTAL',
-      '',
-      '',
-      '',
-      '',
-      formatCurrency(totalPayable),
-      formatCurrency(totalPaid),
-      ''
-    ]);
+    data.push(['TOTAL', '', '', '', '', formatCurrency(totalPayable), formatCurrency(totalPaid), '']);
 
     exportDualReports(
       academyInfo, 
@@ -253,7 +248,6 @@ const Payments: React.FC = () => {
 
       {activeTab === 'students' ? (
         <div className="space-y-8 animate-fadeIn">
-          {/* ... existing students tab content ... */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {Object.entries(classSummaries).map(([grade, data]: [string, any]) => (
               <div key={grade} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
@@ -356,7 +350,6 @@ const Payments: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4 animate-fadeIn">
-          {/* Enhanced Teacher Filter Bar */}
           <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
             <div className="flex flex-col md:flex-row gap-4">
                <div className="flex-1 relative">
@@ -440,15 +433,85 @@ const Payments: React.FC = () => {
                   })}
                 </tbody>
               </table>
-              {filteredTeacherPayments.length === 0 && (
-                <div className="p-20 text-center text-gray-400 italic">No records found matching your query.</div>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Student Payment Modal */}
+      {/* Simplified Teacher Salary Modal */}
+      {showTeacherModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl animate-scaleIn flex flex-col">
+            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50 text-indigo-900 shrink-0">
+              <h2 className="text-xl font-extrabold uppercase tracking-widest">Teacher Salary Summary</h2>
+              <button onClick={() => setShowTeacherModal(false)} className="hover:bg-indigo-100 p-2 rounded-full transition-colors"><i className="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <form onSubmit={handleTeacherSubmit} className="p-8 space-y-6">
+              <div className="grid grid-cols-1 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Select Teacher</label>
+                    <select required value={teacherFormData.teacherId} onChange={e => setTeacherFormData({...teacherFormData, teacherId: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold">
+                      <option value="">Choose Teacher...</option>
+                      {teachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject})</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Period & Grade</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <select value={modalMonth} onChange={e => setModalMonth(e.target.value)} className="w-full px-2 py-3 rounded-xl border border-gray-200 outline-none text-xs font-bold">
+                        {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <select value={modalGrade} onChange={e => setModalGrade(e.target.value as Grade | 'All')} className="w-full px-2 py-3 rounded-xl border border-gray-200 outline-none text-xs font-bold text-indigo-600">
+                        <option value="All">All Grades</option>
+                        {Object.values(Grade).map(g => <option key={g} value={g}>Grade {g}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {teacherFormData.teacherId && (
+                  <div className="p-6 bg-indigo-600 rounded-2xl text-white text-center shadow-xl shadow-indigo-100">
+                    <p className="text-[10px] font-black text-indigo-200 uppercase tracking-widest mb-2">Calculated Amount Payable</p>
+                    <p className="text-4xl font-black">{formatCurrency(teacherFormData.amountPayable)}</p>
+                    <div className="flex justify-center gap-6 mt-4 pt-4 border-t border-white/10">
+                      <div className="text-center">
+                        <p className="text-[9px] uppercase font-black opacity-60">Sessions</p>
+                        <p className="font-bold">{teacherFormData.totalClasses}</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-[9px] uppercase font-black opacity-60">Hours</p>
+                        <p className="font-bold">{teacherFormData.totalHours.toFixed(2)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Confirm Amount Paid (Rs)</label>
+                  <input 
+                    type="number" 
+                    required 
+                    value={teacherFormData.amountPaid} 
+                    onChange={e => setTeacherFormData({...teacherFormData, amountPaid: parseFloat(e.target.value) || 0})} 
+                    className="w-full px-4 py-4 rounded-xl border-2 border-indigo-600 text-2xl font-black text-indigo-700 text-center focus:ring-0 outline-none shadow-inner" 
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-4 pt-4">
+                <button type="button" onClick={() => setShowTeacherModal(false)} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all uppercase tracking-widest text-xs">Cancel</button>
+                <button type="submit" className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs">
+                  Commit Payout
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Student Modal remains unchanged */}
       {showStudentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
           <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl animate-scaleIn">
@@ -509,18 +572,18 @@ const Payments: React.FC = () => {
 
                 <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between">
                    <div className="text-center flex-1">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Fee for this Month (Rs)</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Fee (Rs)</p>
                       <input 
                         type="number" 
                         required 
                         value={studentFormData.totalFee} 
                         onChange={e => setStudentFormData({...studentFormData, totalFee: parseFloat(e.target.value) || 0})} 
-                        className="w-28 px-2 py-1 bg-white border border-gray-200 rounded-lg font-black text-gray-700 text-center focus:ring-2 focus:ring-emerald-500 outline-none" 
+                        className="w-24 px-2 py-1 bg-white border border-gray-200 rounded-lg font-black text-gray-700 text-center outline-none" 
                       />
                    </div>
                    <div className="h-10 w-px bg-gray-200"></div>
                    <div className="text-center flex-1">
-                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status Preview</p>
+                      <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Status</p>
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
                         studentFormData.status === PaymentStatus.PAID ? 'bg-emerald-100 text-emerald-700' : 
                         studentFormData.status === PaymentStatus.PARTIAL ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
@@ -539,7 +602,6 @@ const Payments: React.FC = () => {
                       value={studentFormData.paidAmount} 
                       onChange={e => setStudentFormData({...studentFormData, paidAmount: parseFloat(e.target.value) || 0})} 
                       className="w-full px-4 py-4 rounded-xl border-2 border-emerald-500 focus:ring-0 outline-none text-2xl font-black text-emerald-700 text-center" 
-                      placeholder="0.00"
                     />
                   </div>
                   <div>
@@ -555,141 +617,7 @@ const Payments: React.FC = () => {
               <div className="flex gap-4 pt-4">
                 <button type="button" onClick={closeStudentModal} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all uppercase tracking-widest text-xs">Cancel</button>
                 <button type="submit" className="flex-1 px-6 py-4 bg-emerald-600 text-white rounded-xl font-black hover:bg-emerald-700 shadow-lg shadow-emerald-200 flex items-center justify-center gap-2 transition-all uppercase tracking-widest text-xs">
-                  {editingPaymentId ? 'Update Record' : 'Commit & Notify'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Teacher Salary Modal */}
-      {showTeacherModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl animate-scaleIn flex flex-col">
-            <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-indigo-50 text-indigo-900 shrink-0">
-              <h2 className="text-xl font-extrabold uppercase tracking-widest">Teacher Salary Calculation</h2>
-              <button onClick={() => setShowTeacherModal(false)} className="hover:bg-indigo-100 p-2 rounded-full transition-colors"><i className="fa-solid fa-xmark"></i></button>
-            </div>
-            
-            <form onSubmit={handleTeacherSubmit} className="p-8 space-y-6 overflow-y-auto flex-1">
-              <div className="grid grid-cols-1 gap-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">1. Select Teacher</label>
-                    <select required value={teacherFormData.teacherId} onChange={e => setTeacherFormData({...teacherFormData, teacherId: e.target.value})} className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none font-bold">
-                      <option value="">Choose Teacher...</option>
-                      {teachers.map(t => <option key={t.id} value={t.id}>{t.name} ({t.subject})</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">2. Period Selection</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <select value={modalMonth} onChange={e => setModalMonth(e.target.value)} className="w-full px-2 py-3 rounded-xl border border-gray-200 outline-none text-sm font-bold">
-                        {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                      <select value={modalYear} onChange={e => setModalYear(e.target.value)} className="w-full px-2 py-3 rounded-xl border border-gray-200 outline-none text-sm font-bold">
-                        {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">3. Select Grade (View Details)</label>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setModalGrade('All')}
-                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${modalGrade === 'All' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                    >
-                      ALL SESSIONS
-                    </button>
-                    {Object.values(Grade).map(g => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setModalGrade(g)}
-                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${modalGrade === g ? 'bg-indigo-600 text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                      >
-                        GRADE {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {teacherFormData.teacherId && (
-                  <>
-                    <div className="p-6 bg-indigo-50 rounded-2xl border border-indigo-100 text-center relative overflow-hidden shrink-0">
-                      <div className="absolute top-0 right-0 p-2">
-                         <span className="px-2 py-1 bg-white/50 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest">
-                           Payable Preview
-                         </span>
-                      </div>
-                      <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-2">
-                        Calculated Payout ({modalGrade === 'All' ? 'Combined Total' : `Grade ${modalGrade} Sessions`})
-                      </p>
-                      <p className="text-3xl font-black text-indigo-700">{formatCurrency(teacherFormData.amountPayable)}</p>
-                      <div className="flex justify-center gap-4 mt-2">
-                        <p className="text-xs text-indigo-400 font-bold"><i className="fa-solid fa-chalkboard text-[10px]"></i> {teacherFormData.totalClasses} Sessions</p>
-                        <p className="text-xs text-indigo-400 font-bold"><i className="fa-regular fa-clock text-[10px]"></i> {teacherFormData.totalHours.toFixed(2)} Total Hrs</p>
-                      </div>
-                    </div>
-
-                    {/* NEW: View section for Session Breakdown */}
-                    <div className="space-y-3">
-                      <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Session breakdown list</h3>
-                      <div className="max-h-48 overflow-y-auto rounded-2xl border border-gray-100 divide-y divide-gray-50 bg-gray-50/50">
-                        {currentSessions.length > 0 ? currentSessions.map((session, idx) => {
-                          const teacher = teachers.find(t => t.id === teacherFormData.teacherId);
-                          const sessionRate = session.rateOverride || teacher?.rate || 0;
-                          const sessionPay = teacher?.paymentType === PaymentType.HOURLY 
-                            ? (session.totalHours * sessionRate)
-                            : (sessionRate / (currentSessions.length || 1));
-
-                          return (
-                            <div key={session.id} className="p-4 flex justify-between items-center hover:bg-white transition-colors">
-                              <div className="flex items-center gap-3">
-                                <div className="text-center w-8">
-                                  <p className="text-[9px] font-black text-indigo-300 uppercase leading-none">{idx + 1}</p>
-                                </div>
-                                <div>
-                                  <p className="text-xs font-bold text-gray-800">{session.subject} (G{session.grade})</p>
-                                  <p className="text-[10px] text-gray-400 font-medium">{session.date} • {session.startTime} - {session.endTime}</p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xs font-black text-indigo-600">{formatCurrency(sessionPay)}</p>
-                                <p className="text-[9px] text-gray-400 font-black uppercase tracking-tighter">{session.totalHours} Hrs @ {formatCurrency(sessionRate)}</p>
-                              </div>
-                            </div>
-                          )
-                        }) : (
-                          <div className="p-8 text-center text-gray-400 italic text-sm">
-                            No sessions found for the selected grade and period.
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <div>
-                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">4. Actual Amount Paid (Rs)</label>
-                  <input 
-                    type="number" 
-                    required 
-                    value={teacherFormData.amountPaid} 
-                    onChange={e => setTeacherFormData({...teacherFormData, amountPaid: parseFloat(e.target.value) || 0})} 
-                    className="w-full px-4 py-4 rounded-xl border-2 border-indigo-600 text-2xl font-black text-indigo-700 text-center focus:ring-0 outline-none shadow-inner" 
-                  />
-                </div>
-              </div>
-
-              <div className="flex gap-4 pt-4 sticky bottom-0 bg-white border-t border-gray-50 -mx-8 px-8 py-6">
-                <button type="button" onClick={() => setShowTeacherModal(false)} className="flex-1 px-6 py-4 border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-all uppercase tracking-widest text-xs">Cancel</button>
-                <button type="submit" className="flex-1 px-6 py-4 bg-indigo-600 text-white rounded-xl font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all uppercase tracking-widest text-xs">
-                  Commit Payout
+                  Save Payment Record
                 </button>
               </div>
             </form>

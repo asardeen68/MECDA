@@ -12,6 +12,7 @@ const StudentManagement = lazy(() => import('./pages/StudentManagement'));
 const ClassManagement = lazy(() => import('./pages/ClassManagement'));
 const Attendance = lazy(() => import('./pages/Attendance'));
 const Payments = lazy(() => import('./pages/Payments'));
+const SalarySlips = lazy(() => import('./pages/SalarySlips'));
 const Reports = lazy(() => import('./pages/Reports'));
 const AcademicInfo = lazy(() => import('./pages/AcademicInfo'));
 
@@ -65,6 +66,7 @@ const AppContent: React.FC = () => {
             <Route path="/classes" element={<ClassManagement />} />
             <Route path="/attendance" element={<Attendance />} />
             <Route path="/payments" element={<Payments />} />
+            <Route path="/salary-slips" element={<SalarySlips />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/settings" element={<div className="p-20 text-center text-gray-400">Settings module is currently under maintenance.</div>} />
             <Route path="/logout" element={<LogoutAction onLogout={handleLogout} />} />

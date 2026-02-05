@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from 'react';
 import { useStore } from '../store';
 import { exportDualReports, formatCurrency } from '../utils';
@@ -7,6 +8,7 @@ const Reports: React.FC = () => {
   const { studentPayments, students, teachers, schedules, teacherPayments, academyInfo, attendance } = useStore();
   const [selectedReportMonth, setSelectedReportMonth] = useState<string>(new Date().toLocaleString('default', { month: 'long' }));
   const [selectedReportYear, setSelectedReportYear] = useState<string>(new Date().getFullYear().toString());
+  const [selectedTeacherId, setSelectedTeacherId] = useState<string>('All');
 
   const handleExportAttendance = (grade: string | 'All') => {
     const headers = ['Student ID', 'Student Name', 'Grade', 'Subject', 'Total Classes', 'Attended', 'Percentage'];
@@ -75,10 +77,13 @@ const Reports: React.FC = () => {
     const headers = ['Teacher Name', 'Grades Taught', 'Month', 'Classes', 'Hours', 'Payable', 'Paid', 'Payment Date'];
     const targetPeriod = `${selectedReportMonth} ${selectedReportYear}`;
     
-    const filteredPayments = teacherPayments.filter(p => p.month === targetPeriod);
+    const filteredPayments = teacherPayments.filter(p => {
+      const teacherMatch = selectedTeacherId === 'All' || p.teacherId === selectedTeacherId;
+      return p.month === targetPeriod && teacherMatch;
+    });
     
     if (filteredPayments.length === 0) {
-      alert(`No salary records found for ${targetPeriod}`);
+      alert(`No salary records found for the selected filters in ${targetPeriod}`);
       return;
     }
 
@@ -89,7 +94,6 @@ const Reports: React.FC = () => {
     const data = filteredPayments.map(p => {
       const teacher = teachers.find(t => t.id === p.teacherId);
       
-      // Calculate dynamic grades from schedules for this teacher in this period
       const targetSchedules = schedules.filter(s => 
         s.teacherId === p.teacherId && 
         s.month === selectedReportMonth && 
@@ -97,7 +101,6 @@ const Reports: React.FC = () => {
       );
       
       const sessionGrades = Array.from(new Set(targetSchedules.map(s => s.grade)))
-        /* Fix: Explicitly handle sorting by casting values to any and then string to satisfy parseInt and avoid unknown type inference */
         .sort((a: any, b: any) => parseInt(a as string) - parseInt(b as string))
         .map(g => `G${g}`)
         .join(', ') || 'N/A';
@@ -111,14 +114,13 @@ const Reports: React.FC = () => {
         sessionGrades,
         p.month,
         p.totalClasses,
-        p.totalHours,
+        p.totalHours.toFixed(2),
         formatCurrency(p.amountPayable),
         formatCurrency(p.amountPaid),
         p.date
       ];
     });
 
-    // Add Detailed Summary Row
     data.push([
       'TOTAL SUMMARY',
       '',
@@ -132,7 +134,7 @@ const Reports: React.FC = () => {
 
     exportDualReports(
       academyInfo, 
-      `Teacher Salary Report - ${targetPeriod}`, 
+      `Teacher Salary Report - ${targetPeriod} (${selectedTeacherId === 'All' ? 'All Teachers' : teachers.find(t => t.id === selectedTeacherId)?.name})`, 
       headers, 
       data, 
       `Teacher_Salaries_${selectedReportMonth}_${selectedReportYear}`
@@ -188,13 +190,29 @@ const Reports: React.FC = () => {
           color="text-emerald-500"
           onExport={handleExportPayments}
         />
-        <ReportCard 
-          title="Teacher Salaries" 
-          desc="Breakdown of payout by sessions, hours, and dynamic grades taught per teacher."
-          icon="fa-money-check-dollar"
-          color="text-indigo-600"
-          onExport={handleExportTeacherSalaries}
-        />
+        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl hover:scale-[1.02] transition-all duration-300 group">
+          <div className="w-14 h-14 rounded-2xl bg-gray-50 flex items-center justify-center text-2xl mb-5 text-indigo-600 group-hover:bg-white transition-colors shadow-inner">
+            <i className="fa-solid fa-money-check-dollar"></i>
+          </div>
+          <h3 className="font-bold text-gray-800 mb-2 group-hover:text-indigo-600 transition-colors">Individual Salary Report</h3>
+          <div className="mb-6 space-y-2">
+            <label className="text-[10px] font-black text-gray-400 uppercase">Select Teacher</label>
+            <select 
+              value={selectedTeacherId} 
+              onChange={e => setSelectedTeacherId(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-50 rounded-xl text-xs font-bold border-none outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              <option value="All">All Teachers</option>
+              {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+          <button 
+            onClick={handleExportTeacherSalaries}
+            className="w-full py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-sm flex items-center justify-center gap-2"
+          >
+            <i className="fa-solid fa-file-export"></i> Generate Salary PDF
+          </button>
+        </div>
       </div>
 
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">

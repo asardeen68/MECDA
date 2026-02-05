@@ -10,6 +10,7 @@ const navItems = [
   { name: 'Classes', path: '/classes', icon: 'fa-calendar-days' },
   { name: 'Attendance', path: '/attendance', icon: 'fa-clipboard-user' },
   { name: 'Payments', path: '/payments', icon: 'fa-credit-card' },
+  { name: 'Salary Slips', path: '/salary-slips', icon: 'fa-file-invoice-dollar' },
   { name: 'Reports', path: '/reports', icon: 'fa-file-invoice' },
   { name: 'Settings', path: '/settings', icon: 'fa-sliders' },
   { name: 'Logout', path: '/logout', icon: 'fa-right-from-bracket' },
